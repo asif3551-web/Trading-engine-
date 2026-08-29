@@ -1,0 +1,305 @@
+/* Trading dashboard styles.
+   Dark-first with a full light set. Every colour is a token; direction colours
+   (--up/--down) are reserved for P&L and direction only, never for chrome. */
+
+:root {
+  --bg:            #ffffff;
+  --bg-elevated:   #f6f8fa;
+  --bg-inset:      #eef1f4;
+  --border:        #d0d7de;
+  --text:          #1f2328;
+  --text-muted:    #59636e;
+  --text-faint:    #6e7781;
+
+  --up:            #1a7f64;
+  --up-bg:         rgba(26, 127, 100, 0.10);
+  --down:          #c93c37;
+  --down-bg:       rgba(201, 60, 55, 0.10);
+
+  --entry:         #0969da;
+  --stop:          #c93c37;
+  --target:        #1a7f64;
+
+  --live:          #1a7f64;
+  --warn:          #9a6700;
+  --stale:         #c93c37;
+  --accent:        #0969da;
+
+  --radius: 6px;
+  --font-num: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:            #0d1117;
+    --bg-elevated:   #161b22;
+    --bg-inset:      #010409;
+    --border:        #30363d;
+    --text:          #e6edf3;
+    --text-muted:    #8b949e;
+    --text-faint:    #6e7681;
+
+    --up:            #3fb950;
+    --up-bg:         rgba(63, 185, 80, 0.14);
+    --down:          #f85149;
+    --down-bg:       rgba(248, 81, 73, 0.14);
+
+    --entry:         #58a6ff;
+    --stop:          #f85149;
+    --target:        #3fb950;
+
+    --live:          #3fb950;
+    --warn:          #d29922;
+    --stale:         #f85149;
+    --accent:        #58a6ff;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg:            #0d1117;
+  --bg-elevated:   #161b22;
+  --bg-inset:      #010409;
+  --border:        #30363d;
+  --text:          #e6edf3;
+  --text-muted:    #8b949e;
+  --text-faint:    #6e7681;
+
+  --up:            #3fb950;
+  --up-bg:         rgba(63, 185, 80, 0.14);
+  --down:          #f85149;
+  --down-bg:       rgba(248, 81, 73, 0.14);
+
+  --entry:         #58a6ff;
+  --stop:          #f85149;
+  --target:        #3fb950;
+
+  --live:          #3fb950;
+  --warn:          #d29922;
+  --stale:         #f85149;
+  --accent:        #58a6ff;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Tabular numerals everywhere a number can tick. Without this every update
+   reflows the column and the table jitters. */
+.num, .price, .pnl, td.num, th.num {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* ---------- header ---------- */
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand { font-weight: 650; letter-spacing: -0.01em; }
+.brand small { color: var(--text-faint); font-weight: 400; margin-left: 6px; }
+
+.spacer { flex: 1 1 auto; }
+
+select, button {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 5px 10px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+button:hover, select:hover { border-color: var(--text-faint); }
+button.danger { color: var(--down); border-color: var(--down); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Mode badge: the text carries the meaning, colour only reinforces it. */
+.mode {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+}
+.mode-paper { background: var(--bg-inset); color: var(--text-muted); border: 1px solid var(--border); }
+.mode-live  { background: var(--down); color: #fff; }
+
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.status::before {
+  content: ''; width: 7px; height: 7px; border-radius: 50%;
+  background: currentColor; flex: none;
+}
+.status-live  { color: var(--live); }
+.status-warn  { color: var(--warn); }
+.status-stale { color: var(--stale); }
+
+/* ---------- layout ---------- */
+
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 12px;
+  padding: 12px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  main { grid-template-columns: minmax(0, 1fr); }
+}
+
+.card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.card + .card { margin-top: 12px; }
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 12px;
+}
+.card-head .sub { color: var(--text-faint); font-weight: 400; font-size: 11px; }
+.card-body { padding: 12px; }
+.card-body.flush { padding: 0; }
+
+#chart { height: 460px; width: 100%; }
+#equity-chart { height: 200px; width: 100%; }
+
+/* ---------- metric strip ---------- */
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 1px;
+  background: var(--border);
+}
+.metric { background: var(--bg-elevated); padding: 9px 12px; }
+.metric .label {
+  color: var(--text-muted); font-size: 10.5px;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.metric .value {
+  font-family: var(--font-num); font-variant-numeric: tabular-nums;
+  font-size: 16px; font-weight: 600; margin-top: 2px;
+}
+.pos { color: var(--up); }
+.neg { color: var(--down); }
+.muted { color: var(--text-muted); }
+
+/* ---------- signal cards ---------- */
+
+.signal {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.signal-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+/* Direction is arrow + word + colour: any two surviving is still readable. */
+.dir { font-weight: 700; font-size: 12px; letter-spacing: 0.02em; }
+.dir-long  { color: var(--up); }
+.dir-short { color: var(--down); }
+
+.sym { font-weight: 600; }
+.tf { color: var(--text-faint); font-size: 11px; }
+
+.conf {
+  margin-left: auto; font-family: var(--font-num);
+  font-variant-numeric: tabular-nums; font-size: 11px; color: var(--text-muted);
+}
+
+.why {
+  padding: 7px 10px; font-size: 11.5px; color: var(--text-muted);
+  border-bottom: 1px solid var(--border); background: var(--bg-inset);
+}
+.why ul { margin: 0; padding-left: 16px; }
+.why li { margin: 1px 0; }
+
+table.levels { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.levels td { padding: 4px 10px; border-bottom: 1px solid var(--border); }
+table.levels tr:last-child td { border-bottom: none; }
+table.levels .lbl { color: var(--text-muted); width: 52px; }
+.row-entry .lbl { color: var(--entry); font-weight: 600; }
+/* The stop must never be misread: its own colour and its own weight. */
+.row-stop  .lbl { color: var(--stop);  font-weight: 700; }
+.row-stop  { background: var(--down-bg); }
+.row-tp    .lbl { color: var(--target); font-weight: 600; }
+
+.signal-foot {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  padding: 7px 10px; font-size: 11px; color: var(--text-muted);
+  border-top: 1px solid var(--border); background: var(--bg-inset);
+  font-family: var(--font-num); font-variant-numeric: tabular-nums;
+}
+
+/* ---------- tables ---------- */
+
+table.grid { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.grid th {
+  text-align: left; padding: 7px 10px;
+  color: var(--text-muted); font-weight: 500; font-size: 10.5px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border); position: sticky; top: 0;
+  background: var(--bg-elevated);
+}
+table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--border); }
+table.grid tr:last-child td { border-bottom: none; }
+.scroll { max-height: 300px; overflow-y: auto; }
+
+/* Wide content scrolls inside its own container; the page body never does. */
+.overflow-x { overflow-x: auto; }
+
+.empty {
+  padding: 22px 12px; text-align: center;
+  color: var(--text-faint); font-size: 12px;
+}
+
+.banner {
+  padding: 8px 12px; font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.banner-warn { background: var(--down-bg); color: var(--down); font-weight: 600; }
+.banner-info { background: var(--bg-inset); color: var(--text-muted); }
+
+.rejections { font-size: 11.5px; color: var(--text-muted); }
+.rejections div {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 2px 0; font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

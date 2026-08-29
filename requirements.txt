@@ -1,0 +1,10 @@
+# Core — the only hard requirements.
+numpy>=1.24
+pandas>=2.0
+
+# Optional. The engine runs without all of these:
+#   yfinance  — equities, FX, indices and futures data
+#   PyYAML    — YAML configuration files
+#   pyarrow   — parquet on-disk market data cache
+#   pytest    — test suite
+# pip install yfinance PyYAML pyarrow pytest

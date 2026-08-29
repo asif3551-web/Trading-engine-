@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trading Engine — Live Signals</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="brand">Trading Engine <small>liquidity signals</small></div>
+
+    <label class="tf" for="symbol">Symbol</label>
+    <select id="symbol" aria-label="Symbol"></select>
+
+    <label class="tf" for="timeframe">Timeframe</label>
+    <select id="timeframe" aria-label="Timeframe">
+      <option value="5m">5m</option>
+      <option value="15m" selected>15m</option>
+      <option value="1h">1h</option>
+      <option value="4h">4h</option>
+      <option value="1d">1d</option>
+    </select>
+
+    <div class="spacer"></div>
+
+    <span id="mode" class="mode mode-paper">PAPER</span>
+    <span id="connection" class="status status-warn">connecting</span>
+    <button id="run-backtest" type="button">Run backtest</button>
+    <button id="flatten" class="danger" type="button">Flatten all</button>
+    <button id="theme" type="button" aria-label="Toggle theme">Theme</button>
+  </header>
+
+  <div id="banners"></div>
+
+  <main>
+    <!-- left column -->
+    <section>
+      <div class="card">
+        <div class="card-head">
+          <span id="chart-title">Chart</span>
+          <span class="sub" id="chart-meta"></span>
+          <span class="spacer"></span>
+          <span class="sub" id="chart-updated"></span>
+        </div>
+        <div class="card-body flush">
+          <div id="chart" role="img" aria-label="Price chart with signal levels"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">Account</div>
+        <div class="metrics" id="account-metrics"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          Backtest
+          <span class="sub" id="backtest-meta"></span>
+        </div>
+        <div id="backtest-warnings"></div>
+        <div class="metrics" id="backtest-metrics">
+          <div class="metric"><div class="label">Status</div><div class="value muted">—</div></div>
+        </div>
+        <div class="card-body flush">
+          <div id="equity-chart" role="img" aria-label="Backtest equity curve"></div>
+        </div>
+        <div class="card-body">
+          <div class="rejections" id="rejections"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">Recent trades</div>
+        <div class="scroll overflow-x">
+          <table class="grid" id="trades">
+            <thead>
+              <tr>
+                <th>Side</th><th>Entry</th><th>Exit</th>
+                <th class="num">P&amp;L</th><th class="num">R</th>
+                <th>Exit reason</th>
+              </tr>
+            </thead>
+            <tbody><tr><td colspan="6" class="empty">No trades yet</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- right column -->
+    <aside>
+      <div class="card">
+        <div class="card-head">
+          Active signals
+          <span class="sub" id="signal-count"></span>
+        </div>
+        <div class="card-body" id="signals">
+          <div class="empty">Waiting for a qualifying setup</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">Open positions</div>
+        <div class="overflow-x">
+          <table class="grid" id="positions">
+            <thead>
+              <tr>
+                <th>Symbol</th><th>Side</th>
+                <th class="num">Size</th><th class="num">Entry</th><th class="num">R</th>
+              </tr>
+            </thead>
+            <tbody><tr><td colspan="5" class="empty">Flat</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">Risk budget</div>
+        <div class="metrics" id="risk-metrics"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">Liquidity read</div>
+        <div class="card-body" id="liquidity">
+          <div class="empty">Loading</div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lightweight-charts/4.2.0/lightweight-charts.standalone.production.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

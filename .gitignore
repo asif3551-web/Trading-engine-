@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Runtime state and cached market data — never committed. The state file
+# records live positions and equity; the cache is reproducible from the feeds.
+.cache/
+.state/
+*.parquet
+
+.pytest_cache/
+.coverage
+htmlcov/
+
+.DS_Store
+.idea/
+.vscode/
+
+# Never commit credentials. Broker keys are read from the environment only.
+.env
+*.key
+secrets.*

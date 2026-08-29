@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trading-engine"
+version = "1.0.0"
+description = "Liquidity-driven systematic trading system with signals, backtesting and auto-trading"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy>=1.24", "pandas>=2.0"]
+
+[project.optional-dependencies]
+data = ["yfinance>=0.2"]
+config = ["PyYAML>=6.0"]
+cache = ["pyarrow>=14.0"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+trading-engine = "trading_engine.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["trading_engine*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

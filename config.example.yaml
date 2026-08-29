@@ -1,0 +1,125 @@
+# Trading engine configuration.
+#
+# Every value here is the built-in default, shown so the knobs are discoverable.
+# Copy to config.yaml and edit, then:  python -m trading_engine backtest -c config.yaml
+#
+# Broker API keys are NEVER read from this file — they come from the
+# environment (BINANCE_API_KEY / BINANCE_API_SECRET) so they cannot be
+# committed by accident.
+
+risk:
+  # Fraction of equity risked per trade. Above ~2% a normal losing streak
+  # becomes unrecoverable; see the losing-streak maths in the README.
+  risk_per_trade: 0.005
+  max_risk_per_trade: 0.02
+
+  # Total open risk across all positions, if every stop were hit at once.
+  max_portfolio_heat: 0.06
+  max_positions: 5
+  max_correlated_positions: 2     # correlated positions behave as one position
+  correlation_threshold: 0.7
+
+  max_leverage: 3.0
+
+  # Circuit breakers.
+  daily_loss_limit: 0.03
+  weekly_loss_limit: 0.07
+  drawdown_throttle_start: 0.10   # start scaling size down here
+  max_drawdown_stop: 0.20         # halt the system entirely
+  consecutive_loss_limit: 5
+
+  # The 2-3R mandate. Two thresholds, because they catch opposite failures:
+  #   min_reward_risk — the FURTHEST target must be this many R away, proving
+  #                     the trade can pay 2-3x the risk at all.
+  #   min_expected_r  — the SIZE-WEIGHTED ladder average, stopping a setup that
+  #                     reaches 3R but banks 90% of size at 0.5R.
+  # Scaling out necessarily makes the weighted number lower than the furthest
+  # target: the default ladder below averages 1.85R.
+  min_reward_risk: 2.0
+  min_expected_r: 1.5
+  target_reward_risk: 3.0
+
+  # Stops closer than this are inside the noise band and get hit at random;
+  # wider than this and the position becomes too small to be worth taking.
+  min_stop_distance_atr: 0.5
+  max_stop_distance_atr: 3.0
+
+  # fixed_fractional | atr_normalised | vol_target | kelly
+  sizing_model: "fixed_fractional"
+  kelly_fraction: 0.25            # never full Kelly — W and R are estimates
+
+execution:
+  maker_fee: 0.0002
+  taker_fee: 0.0005
+  slippage_bps: 2.0
+  slippage_atr_factor: 0.05       # extra slippage in volatile conditions
+  spread_bps: 1.0
+  fill_on_next_open: true         # decide on close of t, fill at open of t+1
+  stop_first_on_ambiguous_bar: true   # pessimistic: the stop wins ties
+  max_slippage_bps: 25.0
+
+strategy:
+  name: "liquidity_sweep"
+  timeframe: "15m"
+  htf_timeframe: "4h"
+  lookback_bars: 500
+
+  swing_lookback: 5               # fractal width for swing detection
+  liquidity_tolerance_pct: 0.001  # how close counts as "equal" highs/lows
+  min_sweep_penetration_pct: 0.0005
+  fvg_min_size_atr: 0.15
+  displacement_atr: 1.2           # what counts as an impulsive move
+  order_block_lookback: 30
+
+  min_confidence: 55.0            # confluence floor, 0-100
+  require_htf_alignment: true
+  require_liquidity_sweep: true
+
+  weight_liquidity: 0.40
+  weight_technical: 0.35
+  weight_fundamental: 0.25
+
+  # Exit ladder: R multiples and the fraction of the position closed at each.
+  tp_ladder: [1.0, 2.0, 3.0]
+  tp_sizes: [0.40, 0.35, 0.25]
+  move_to_breakeven_after_tp: 1   # after TP1 the trade cannot lose
+  trail_after_r: 2.0
+  trail_atr_mult: 1.5
+  time_stop_bars: 96              # bail out if it goes nowhere
+  atr_period: 14
+  atr_stop_mult: 1.5
+
+data:
+  provider: "auto"                # auto | binance | yfinance | synthetic | csv:<dir>
+  symbols:
+    - "BTC/USDT"
+  cache_dir: ".cache/market_data"
+  cache_enabled: true
+  max_staleness_sec: 120          # beyond this the feed is stale -> no new risk
+  orderbook_depth: 20
+
+fundamentals:
+  enabled: true
+  # No new risk into a scheduled high-impact release: spreads widen, stops get
+  # skipped, and slippage is unbounded.
+  event_blackout_minutes_before: 60
+  event_blackout_minutes_after: 30
+  high_impact_only: true
+  funding_extreme_bps: 5.0        # crowded positioning = squeeze risk
+  earnings_blackout_days: 2
+
+live:
+  mode: "paper"                   # paper | live — paper shares the live code path
+  broker: "paper"                 # paper | binance | alpaca
+  poll_interval_sec: 15
+  starting_equity: 10000.0
+  state_file: ".state/engine_state.json"
+  kill_switch_file: ".state/KILL" # touch this file to flatten and halt
+  reconcile_on_start: true
+
+backtest:
+  starting_equity: 10000.0
+  warmup_bars: 200
+  walk_forward_splits: 4
+  in_sample_ratio: 0.7
+  annualisation_periods: 35040    # 15m bars in a 24/7 year (365*24*4)
