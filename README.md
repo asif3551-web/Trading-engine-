@@ -8,8 +8,13 @@ automatically on paper or live through one shared code path.
 ```
 python -m trading_engine scan      --symbol BTC/USDT
 python -m trading_engine backtest  --symbol BTC/USDT --bars 3000
-python -m trading_engine serve     --trade          # dashboard on :8000
+python -m trading_engine tune      --symbol BTC/USDT --bars 20000
+python -m trading_engine serve                      # dashboard on :8000
 ```
+
+Paper trading is the default everywhere. Live trading needs three explicit
+opt-ins (see [Auto-trading](#auto-trading)); nothing here can place a real order
+by accident.
 
 ---
 
@@ -180,6 +185,48 @@ predictive. Consistency across windows matters more than the average.
 
 ---
 
+## Tuning, and an honest word on edge
+
+The engine's *machinery* is tested: no lookahead, honest accounting, enforced
+risk geometry. Whether its **entry** has an edge on your market is a separate
+question, and one that cannot be answered by reasoning — only by measurement on
+that market's real data.
+
+That distinction matters because of a result worth reporting. Sweeping the exit
+management (when the stop moves to break-even, how the ladder is weighted) moves
+win rate and win size around exactly as theory predicts — pushing break-even
+later took average wins from 0.94R to 1.58R and hit rate from 53% to 34% — but
+**expectancy barely moved**. No exit scheme rescues an entry without edge; it
+only trades hit rate against win size.
+
+So the defaults here are deliberately *not* tuned to any particular market. Tune
+them yourself, out-of-sample:
+
+```bash
+python -m trading_engine tune --symbol BTC/USDT --bars 20000
+```
+
+The sweep ranks candidates on **out-of-sample expectancy only**, disqualifies
+settings with too few out-of-sample trades, and weights by how many windows
+stayed positive — a setting that is superb in one window and awful in three is
+worse than a mediocre one that holds everywhere. If nothing comes out positive,
+it says so plainly rather than crowning a "best" loser.
+
+### The diagnostic that matters most
+
+Compare **Avg peak** (MFE) with **Avg win** in any backtest or on the dashboard:
+
+- Peak ≫ win → winners are being cut. Targets or trailing are too tight.
+- Peak ≈ win → exits are efficient; if expectancy is still negative, the problem
+  is the entry.
+- Avg worst (MAE) near −1R → trades sit on the stop from the start, meaning
+  entries are early or stops are too tight.
+
+This pair diagnoses a strategy faster than any headline metric, which is why
+both are printed with the results.
+
+---
+
 ## Installation
 
 ```bash
@@ -230,10 +277,13 @@ taken, you cannot tell a broken system from an unlucky one.
 
 ```bash
 python -m trading_engine backtest --symbol BTC/USDT --bars 5000
-python -m trading_engine serve --trade          # http://127.0.0.1:8000
+python -m trading_engine serve                  # http://127.0.0.1:8000
 
-# Watch several markets — they populate the dashboard's symbol picker
-python -m trading_engine serve --symbol BTC/USDT,ETH/USDT,SOL/USDT --trade
+# Watch several markets — these become the autotrader's watchlist
+python -m trading_engine serve --symbol BTC/USDT,ETH/USDT,SOL/USDT
+
+# Dashboard only, no paper trading loop
+python -m trading_engine serve --no-trade
 ```
 
 The chart uses TradingView Lightweight Charts, loaded from a CDN. Corporate
@@ -245,9 +295,13 @@ a local copy first, then three CDNs, and if all fail it drops **only** the chart
 python -m trading_engine vendor-chart          # ~50KB into frontend/vendor/
 ```
 
-The dashboard shows the chart with entry/stop/target lines and liquidity zone
-overlays, active signal cards, open positions, live risk budget, and backtest
-results with their warnings. It binds to localhost by default — the API is
+The dashboard runs the **paper** autotrader by default and shows: the chart with
+entry/stop/target lines and liquidity zone overlays, active signal cards, open
+positions, live risk budget, backtest results with their warnings, and a **"Why
+no signal"** panel naming the exact gate that rejected the latest bar — so a
+quiet engine is visibly working rather than indistinguishable from a dead one.
+The symbol box is free text: any symbol the feed resolves can be charted, and the
+page says when you are charting something outside the autotrader's watchlist. It binds to localhost by default — the API is
 unauthenticated and can close positions, so it must not be exposed to a network.
 
 ### Auto-trading
@@ -352,11 +406,11 @@ trading_engine/
     manager.py            Sizing and the portfolio guardrails
     levels.py             Stop and target placement — the 2-3R geometry
   strategy/               Confluence scoring and signal generation
-  backtest/               Event-driven engine, metrics, walk-forward
+  backtest/               Event-driven engine, metrics, walk-forward, tuner
   live/                   Broker adapters and the autotrader
   api/server.py           REST API and dashboard host
 frontend/                 Dashboard (Lightweight Charts)
-tests/                    127 tests
+tests/                    136 tests
 .claude/skills/           Reusable skills distilled from top-rated projects
 ```
 
@@ -379,7 +433,7 @@ open-source work in each area, so the practices survive beyond this repo:
 ## Testing
 
 ```bash
-python -m pytest tests/ -q      # 127 tests
+python -m pytest tests/ -q      # 136 tests
 ```
 
 The suite covers indicator correctness and causality, structure and sweep

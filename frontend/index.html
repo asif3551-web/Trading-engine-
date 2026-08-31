@@ -11,7 +11,12 @@
     <div class="brand">Trading Engine <small>liquidity signals</small></div>
 
     <label class="tf" for="symbol">Symbol</label>
-    <select id="symbol" aria-label="Symbol"></select>
+    <!-- Free text with suggestions: any symbol the feed accepts can be charted,
+         not just the configured watchlist. -->
+    <input id="symbol" list="symbol-options" aria-label="Symbol"
+           autocomplete="off" spellcheck="false" size="12"
+           placeholder="BTC/USDT">
+    <datalist id="symbol-options"></datalist>
 
     <label class="tf" for="timeframe">Timeframe</label>
     <select id="timeframe" aria-label="Timeframe">
@@ -25,6 +30,7 @@
     <div class="spacer"></div>
 
     <span id="mode" class="mode mode-paper">PAPER</span>
+    <span id="autotrader" class="status status-warn">autotrader ?</span>
     <span id="connection" class="status status-warn">connecting</span>
     <button id="run-backtest" type="button">Run backtest</button>
     <button id="flatten" class="danger" type="button">Flatten all</button>
@@ -117,6 +123,16 @@
       <div class="card">
         <div class="card-head">Risk budget</div>
         <div class="metrics" id="risk-metrics"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          Why no signal
+          <span class="sub" id="gate-updated"></span>
+        </div>
+        <div class="card-body" id="gate">
+          <div class="empty">Waiting for the first evaluation</div>
+        </div>
       </div>
 
       <div class="card">

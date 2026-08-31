@@ -504,3 +504,129 @@ def test_cache_max_age_is_short_enough_for_live_polling():
             f"{timeframe}: cache could serve {worst_case}s-old data against a "
             f"{limit}s limit"
         )
+
+
+# --------------------------------------------------------------------------- #
+# Parameter tuner
+# --------------------------------------------------------------------------- #
+
+def test_tuner_builds_a_bounded_candidate_grid():
+    from trading_engine.backtest.tuner import build_candidates
+
+    candidates = build_candidates(max_candidates=12)
+    assert len(candidates) == 12
+    for c in candidates:
+        assert "strategy.tp_ladder" in c and "strategy.tp_sizes" in c
+        # Ladders are swept as coupled pairs; a mismatch would be silently wrong.
+        assert len(c["strategy.tp_ladder"]) == len(c["strategy.tp_sizes"])
+        assert abs(sum(c["strategy.tp_sizes"]) - 1.0) < 1e-9
+
+
+def test_tuner_ranks_on_out_of_sample_only(bars):
+    """The ranking score must ignore in-sample results entirely — that is the
+    whole defence against picking a curve-fitted setting."""
+    from trading_engine.backtest.tuner import Candidate
+
+    fitted = Candidate(
+        params={}, in_sample_expectancy=5.0, out_sample_expectancy=-0.5,
+        out_sample_trades=100, window_expectancies=[-0.5, -0.5],
+    )
+    honest = Candidate(
+        params={}, in_sample_expectancy=0.2, out_sample_expectancy=0.15,
+        out_sample_trades=100, window_expectancies=[0.1, 0.2],
+    )
+    assert honest.score > fitted.score
+
+
+def test_tuner_disqualifies_thin_samples():
+    from trading_engine.backtest.tuner import Candidate
+
+    thin = Candidate(params={}, out_sample_expectancy=9.9, out_sample_trades=3)
+    thin.disqualified = "only 3 out-of-sample trades (need 20)"
+    assert thin.score == float("-inf")
+
+
+def test_tuner_consistency_penalises_one_lucky_window():
+    from trading_engine.backtest.tuner import Candidate
+
+    lucky = Candidate(
+        params={}, out_sample_expectancy=0.4, out_sample_trades=100,
+        window_expectancies=[2.0, -0.5, -0.5, -0.4],
+    )
+    steady = Candidate(
+        params={}, out_sample_expectancy=0.3, out_sample_trades=100,
+        window_expectancies=[0.3, 0.3, 0.3, 0.3],
+    )
+    assert lucky.consistency == 0.25
+    assert steady.consistency == 1.0
+    assert steady.score > lucky.score
+
+
+def test_tuner_runs_end_to_end(bars):
+    from trading_engine.backtest.tuner import format_report, tune
+
+    grid = {"strategy.move_to_breakeven_after_tp": [1, 2]}
+    candidates = tune(
+        bars.iloc[:1500], symbol="BTC/USDT", grid=grid,
+        n_splits=2, min_out_sample_trades=1, max_candidates=4,
+    )
+    assert candidates
+    assert all(isinstance(c.out_sample_expectancy, float) for c in candidates)
+    report = format_report(candidates)
+    assert "WALK-FORWARD PARAMETER SWEEP" in report
+    # The report must never present in-sample as the headline result.
+    assert "OUT-OF-SAMPLE" in report
+
+
+def test_tuner_report_says_so_when_nothing_works():
+    """A sweep with no positive candidate is a real finding and must be stated
+    as one, not dressed up as a 'best' setting."""
+    from trading_engine.backtest.tuner import Candidate, format_report
+
+    losers = [
+        Candidate(
+            params={"strategy.min_confidence": 50.0},
+            out_sample_expectancy=-0.2, out_sample_trades=50,
+            window_expectancies=[-0.2, -0.2],
+        )
+    ]
+    report = format_report(losers)
+    assert "EVERY setting is negative" in report
+    assert "no exit scheme can" in report
+
+
+def test_tuner_rejects_data_it_cannot_split():
+    from trading_engine.backtest.tuner import tune
+
+    tiny = SyntheticFeed().get_bars("X/USDT", "15m", 60)
+    with pytest.raises(ValueError, match="not enough data"):
+        tune(tiny, n_splits=8)
+
+
+# --------------------------------------------------------------------------- #
+# Excursion accounting
+# --------------------------------------------------------------------------- #
+
+def test_mfe_is_not_credited_after_the_position_closed(result):
+    """Regression: excursions were updated for the whole bar before the stop was
+    processed, so a trade stopped out early in a large bar reported the bar's
+    favourable extreme. One showed MFE +4.28R while exiting at -1.53R.
+
+    Under the stop-first tie-break, a stopped-out trade cannot claim favourable
+    excursion from its final bar.
+    """
+    for t in result.trades:
+        if t.exit_reason is ExitReason.STOP_LOSS:
+            assert t.mfe_r < 1.0, (
+                f"a full stop-out reports peaking at {t.mfe_r:.2f}R — excursions "
+                f"are being credited past the exit"
+            )
+
+
+def test_mfe_is_at_least_the_realised_r(result):
+    """A trade cannot realise more than its peak favourable excursion."""
+    for t in result.trades:
+        if t.r_multiple > 0:
+            assert t.mfe_r >= t.r_multiple - 1e-6, (
+                f"realised {t.r_multiple:.2f}R exceeds peak {t.mfe_r:.2f}R"
+            )

@@ -160,7 +160,11 @@ class Backtester:
             # 2. Manage an open position against this bar's range.
             if position is not None:
                 position.bars_held += 1
-                position.update_excursions(highs[i], lows[i])
+                # Excursions are updated INSIDE _manage, once it knows whether
+                # the stop filled on this bar. Crediting the whole bar's range
+                # first inflated MFE for trades that were already closed early
+                # in it — one such trade reported peaking at +4.28R while
+                # exiting at -1.53R, which made the give-back diagnostic lie.
                 trade, realised = self._manage(
                     position, i, opens, highs, lows, closes, atr_now, ts,
                     is_last=(i == len(data) - 1),
@@ -290,6 +294,18 @@ class Backtester:
         long = pos.side is Side.LONG
 
         stop_touched = pos.stop_hit(highs[i], lows[i])
+
+        # Record excursions consistently with the stop-first assumption. If the
+        # stop filled on this bar we cannot claim the bar's favourable extreme:
+        # under our own tie-break the position was gone before price got there.
+        # Adverse excursion is always real.
+        if stop_touched:
+            pos.update_excursions(
+                pos.entry_price if long else highs[i],
+                lows[i] if long else pos.entry_price,
+            )
+        else:
+            pos.update_excursions(highs[i], lows[i])
         # Which targets could have been reached this bar.
         hit_targets = [
             tp for tp in pos.take_profits

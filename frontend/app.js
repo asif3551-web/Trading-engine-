@@ -24,7 +24,16 @@ const state = {
   lastBarTime: 0,
   backtestRunning: false,
   failures: 0,
+  watchlist: [],
 };
+
+/* Suggestions only — the symbol field accepts anything the feed resolves. */
+const COMMON_SYMBOLS = [
+  'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT', 'ADA/USDT',
+  'DOGE/USDT', 'AVAX/USDT', 'LINK/USDT', 'MATIC/USDT', 'DOT/USDT', 'LTC/USDT',
+  'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'SPY', 'QQQ',
+  'EURUSD=X', 'GBPUSD=X', 'USDJPY=X', '^GSPC', '^NDX', 'GC=F', 'CL=F',
+];
 
 /* ---------- formatting ----------
  * Precision is resolved once per instrument and never recomputed per tick, so
@@ -333,8 +342,8 @@ async function loadChart() {
   drawZones(data.zones || []);
 
   document.getElementById('chart-title').textContent = `${data.symbol} · ${data.timeframe}`;
-  document.getElementById('chart-meta').textContent =
-    `${fmtPrice(last.close)} · feed: ${data.feed}`;
+  document.getElementById('chart-meta').innerHTML =
+    `${fmtPrice(last.close)} &nbsp;<span class="feed-tag">${esc(feedLabel(data.feed))}</span>`;
   document.getElementById('chart-updated').textContent =
     `updated ${new Date().toUTCString().slice(17, 25)} UTC`;
 
@@ -342,8 +351,30 @@ async function loadChart() {
   renderBanners(data);
 }
 
+/* Name the actual upstream, not the wrapper: "cached:binance" tells a user
+   nothing about whether these are real prices. */
+function feedLabel(feed) {
+  const base = String(feed || '').replace('cached:', '');
+  const names = {
+    binance: 'Binance public API (live)',
+    yfinance: 'Yahoo Finance (delayed)',
+    synthetic: 'SYNTHETIC — generated, not a real market',
+    csv: 'local CSV',
+  };
+  const label = names[base] || base;
+  return String(feed).startsWith('cached:') ? `${label} · cached` : label;
+}
+
 function renderBanners(data) {
   const banners = [];
+  if (data && data.symbol && state.watchlist.length
+      && !state.watchlist.includes(data.symbol)) {
+    banners.push(
+      `<div class="banner banner-info">${esc(data.symbol)} is being charted but `
+      + 'is not in the autotrader watchlist, so no paper trades will be taken '
+      + 'on it. Add it with <code>--symbol</code> or in config.</div>',
+    );
+  }
   if (data && data.is_synthetic) {
     banners.push(
       '<div class="banner banner-info">Synthetic data feed — generated prices, '
@@ -446,8 +477,32 @@ function signalCard(sig) {
   </article>`;
 }
 
+function renderGate(evaluations) {
+  const el = document.getElementById('gate');
+  const latest = (evaluations || []).slice(-1)[0];
+  if (!latest) {
+    el.innerHTML = '<div class="empty">No evaluation yet — the autotrader '
+      + 'publishes one on each poll.</div>';
+    return;
+  }
+  document.getElementById('gate-updated').textContent =
+    latest.timestamp ? String(latest.timestamp).slice(11, 16) + ' UTC' : '';
+
+  const reason = latest.rejected
+    ? `<div class="gate-reason">${esc(latest.rejected)}</div>`
+    : '<div class="gate-reason" style="border-left-color:var(--live)">'
+      + 'All gates passed — a signal was produced.</div>';
+
+  el.innerHTML = reason + `<div class="gate-scores">
+      <span>liquidity ${Number(latest.liquidity_score).toFixed(0)}</span>
+      <span>technical ${Number(latest.technical_score).toFixed(0)}</span>
+      <span>confluence ${Number(latest.confidence).toFixed(0)}</span>
+    </div>`;
+}
+
 async function loadSignals() {
   const data = await fetchJSON('/api/signals');
+  renderGate(data.evaluations);
   const el = document.getElementById('signals');
   const signals = data.signals || [];
   document.getElementById('signal-count').textContent =
@@ -480,6 +535,21 @@ async function loadStatus() {
   const live = s.mode === 'live';
   modeEl.className = `mode ${live ? 'mode-live' : 'mode-paper'}`;
   modeEl.textContent = live ? 'LIVE' : 'PAPER';
+
+  // The autotrader is a separate concern from the data connection: the
+  // dashboard can be perfectly connected while no trading loop is running,
+  // which previously looked identical to "nothing is happening".
+  const at = document.getElementById('autotrader');
+  if (s.halted) {
+    at.className = 'status status-stale';
+    at.textContent = 'autotrader halted';
+  } else if (s.running) {
+    at.className = 'status status-live';
+    at.textContent = `autotrader on · ${s.mode}`;
+  } else {
+    at.className = 'status status-warn';
+    at.textContent = 'autotrader off';
+  }
 
   if (s.halted) {
     setConnection('stale', 'halted');
@@ -567,6 +637,10 @@ async function runBacktest() {
       metric('Max DD', fmtPct(-m.max_drawdown * 100), 'neg'),
       metric('Avg win', `${m.avg_win_r.toFixed(2)}R`, 'pos'),
       metric('Avg loss', `${m.avg_loss_r.toFixed(2)}R`, 'neg'),
+      // MFE vs avg win is the fastest read on whether winners are being cut:
+      // a large gap means targets or trailing are leaving money behind.
+      metric('Avg peak', `${m.avg_mfe_r.toFixed(2)}R`, 'muted'),
+      metric('Avg worst', `${m.avg_mae_r.toFixed(2)}R`, 'muted'),
       metric('Fees', fmtMoney(m.total_fees), 'muted'),
     ].join('');
 
@@ -649,8 +723,16 @@ async function init() {
   }
 
   const symbols = (config.data && config.data.symbols) || ['BTC/USDT'];
+  state.watchlist = symbols;
+
+  // Suggestions cover the watchlist plus common markets, but the field is free
+  // text: /api/chart accepts any symbol the feed understands.
+  const suggestions = [...new Set([...symbols, ...COMMON_SYMBOLS])];
+  document.getElementById('symbol-options').innerHTML =
+    suggestions.map((s) => `<option value="${esc(s)}"></option>`).join('');
+
   const select = document.getElementById('symbol');
-  select.innerHTML = symbols.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  select.value = symbols[0];
   state.symbol = symbols[0];
 
   const tf = document.getElementById('timeframe');
@@ -659,10 +741,16 @@ async function init() {
     tf.value = state.timeframe;
   }
 
-  select.addEventListener('change', (e) => {
-    state.symbol = e.target.value;
+  const applySymbol = () => {
+    const value = select.value.trim().toUpperCase();
+    if (!value || value === state.symbol) return;
+    state.symbol = value;
     state.lastBarTime = 0;          // force a full redraw on instrument change
     refresh();
+  };
+  select.addEventListener('change', applySymbol);
+  select.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); applySymbol(); }
   });
   tf.addEventListener('change', (e) => {
     state.timeframe = e.target.value;

@@ -184,6 +184,7 @@ class AutoTrader:
                 symbol, age, last_bar.isoformat(),
             )
             self._manage_open_position(symbol, df, allow_new=False)
+            self._note(symbol, f"data is {age:.0f}s stale — no new risk")
             return
         self.status.data_stale = False
 
@@ -194,6 +195,7 @@ class AutoTrader:
         # Existing position takes priority over looking for a new one.
         self._manage_open_position(symbol, df, allow_new=True)
         if self.broker_position(symbol) is not None:
+            self._note(symbol, "already holding a position in this symbol")
             return
 
         # --- fundamentals --------------------------------------------------#
@@ -242,6 +244,7 @@ class AutoTrader:
         )
         if not decision.approved:
             log.info("signal on %s rejected by risk: %s", symbol, decision.reason)
+            self._note(symbol, f"risk manager: {decision.reason}")
             return
 
         signal = self.risk.apply(ev.signal, decision)
@@ -497,6 +500,28 @@ class AutoTrader:
 
     def _record_evaluation(self, ev) -> None:
         self.recent_evaluations.append(ev.to_dict())
+        del self.recent_evaluations[:-50]
+
+    def _note(self, symbol: str, reason: str) -> None:
+        """Publish a gate reason for a path that never reached the strategy.
+
+        Without this the dashboard cannot distinguish "the engine is working and
+        declining setups" from "the engine is dead", which are very different
+        things to a person deciding whether to trust it.
+        """
+        self.recent_evaluations.append(
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "symbol": symbol,
+                "signal": None,
+                "rejected": reason,
+                "confidence": 0.0,
+                "liquidity_score": 0.0,
+                "technical_score": 0.0,
+                "fundamental_score": 0.0,
+                "reasons": [],
+            }
+        )
         del self.recent_evaluations[:-50]
 
     def _on_error(self, message: str) -> None:

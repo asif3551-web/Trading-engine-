@@ -275,6 +275,47 @@ def cmd_trade(args) -> int:
     return 0
 
 
+def cmd_tune(args) -> int:
+    """Walk-forward parameter sweep on real data."""
+    from .backtest.tuner import format_report, tune
+
+    config = _load_config(args)
+    symbol = config.data.symbols[0]
+    feed = _feed_for(config, symbol, args.provider)
+    _warn_if_synthetic(feed)
+    if feed.name == "synthetic":
+        print(
+            "  Tuning on synthetic data is meaningless: it is a random walk, so\n"
+            "  every setting must lose after costs. Use a real feed.\n",
+            file=sys.stderr,
+        )
+
+    df = feed.get_bars(symbol, config.strategy.timeframe, args.bars)
+    print(f"tuning {symbol} {config.strategy.timeframe} over {len(df)} bars "
+          f"({df.index[0].date()} to {df.index[-1].date()})")
+
+    def show(n: int, total: int, label: str) -> None:
+        print(f"\r  [{n:>3}/{total}] {label:<52}", end="", flush=True)
+
+    candidates = tune(
+        df, base_config=config, symbol=symbol,
+        n_splits=config.backtest.walk_forward_splits,
+        in_sample_ratio=config.backtest.in_sample_ratio,
+        min_out_sample_trades=args.min_trades,
+        max_candidates=args.max_candidates,
+        progress=None if args.json else show,
+    )
+    if not args.json:
+        print("\r" + " " * 70)
+
+    if args.json:
+        print(json.dumps([c.to_dict() for c in candidates], indent=2, default=str))
+        return 0
+
+    print(format_report(candidates, top=args.top))
+    return 0
+
+
 def cmd_vendor_chart(args) -> int:
     """Download the charting library into frontend/vendor/ for offline use.
 
@@ -394,6 +435,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tr.set_defaults(func=cmd_trade)
 
+    tu = sub.add_parser(
+        "tune", parents=[common],
+        help="walk-forward sweep of exit/confluence settings on real data",
+    )
+    tu.add_argument("--bars", type=int, default=8000)
+    tu.add_argument(
+        "--min-trades", type=int, default=20,
+        help="disqualify settings with fewer out-of-sample trades",
+    )
+    tu.add_argument("--max-candidates", type=int, default=60)
+    tu.add_argument("--top", type=int, default=10)
+    tu.set_defaults(func=cmd_tune)
+
     vc = sub.add_parser(
         "vendor-chart",
         help="download the charting library for offline dashboard use",
@@ -405,9 +459,10 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8000)
     sv.add_argument(
-        "--trade", action="store_true",
-        help="also run the paper autotrader in the background",
+        "--no-trade", dest="trade", action="store_false",
+        help="serve the dashboard only, without the paper autotrader",
     )
+    sv.set_defaults(trade=True)
     sv.set_defaults(func=cmd_serve)
 
     return parser
