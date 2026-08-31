@@ -121,6 +121,7 @@ class LiquidityAnalyzer:
         self.zone_max_age_bars = zone_max_age_bars
         self.profile_refresh_bars = profile_refresh_bars
 
+        self._has_orderbook = False
         self._zones_by_index: dict[int, list[Zone]] = {}
         self._profile_cache: tuple[int, VolumeProfile | None] = (-1, None)
         self._df: pd.DataFrame | None = None
@@ -210,6 +211,7 @@ class LiquidityAnalyzer:
             profile = volume_profile(df.iloc[start: bar_index + 1])
             self._profile_cache = (bar_index, profile)
 
+        self._has_orderbook = book is not None
         ctx = LiquidityContext(
             bar_index=bar_index,
             timestamp=df.index[bar_index],
@@ -316,6 +318,16 @@ class LiquidityAnalyzer:
                     f"{ctx.pools_below[0].price:.6g}"
                 )
 
+        # Headroom actually available on this market. Volume profile needs
+        # volume and depth imbalance needs an order book; neither exists for
+        # Yahoo FX or spot metals. Unreachable points are removed from the
+        # denominator instead of quietly counting against those markets.
+        available = 100.0
+        if ctx.profile is None:
+            available -= 8.0
+        if not self._has_orderbook:
+            available -= 7.0
+
         # 5. Volume profile position (up to 8)
         if ctx.profile is not None:
             if ctx.price < ctx.profile.value_area_low:
@@ -338,12 +350,16 @@ class LiquidityAnalyzer:
                     f"order book ask-heavy ({ctx.depth_imbalance:+.2f} imbalance)"
                 )
 
+        def normalise(raw: float) -> float:
+            capped = min(available, raw)
+            return min(100.0, capped * 100.0 / available) if available > 0 else 0.0
+
         if long_score > short_score:
-            ctx.bias, ctx.score = "long", min(100.0, long_score)
+            ctx.bias, ctx.score = "long", normalise(long_score)
         elif short_score > long_score:
-            ctx.bias, ctx.score = "short", min(100.0, short_score)
+            ctx.bias, ctx.score = "short", normalise(short_score)
         else:
-            ctx.bias, ctx.score = "neutral", min(100.0, long_score)
+            ctx.bias, ctx.score = "neutral", normalise(long_score)
 
         # Only surface the reasons that support the chosen side.
         ctx.reasons = _filter_reasons(reasons, ctx.bias)

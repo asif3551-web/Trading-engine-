@@ -177,12 +177,22 @@ class DataConfig:
     provider: str = "auto"               # auto | binance | yfinance | csv | synthetic
     # A few liquid defaults so the dashboard's symbol picker is useful out of
     # the box. Override in config, or with a comma-separated --symbol.
+    # A cross-market default so the dashboard is useful out of the box:
+    # crypto (real time), gold and silver (delayed futures), and a major FX
+    # pair. Override in config, or with a comma-separated --symbol.
     symbols: list[str] = field(
-        default_factory=lambda: ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+        default_factory=lambda: [
+            "BTC/USDT", "ETH/USDT", "XAUUSD", "XAGUSD", "EURUSD",
+        ]
     )
     cache_dir: str = ".cache/market_data"
     cache_enabled: bool = True
-    max_staleness_sec: int = 120         # beyond this the feed is stale -> fail closed
+    # Tolerance ON TOP OF one bar duration AND the provider's own publication
+    # delay. Yahoo is ~15 minutes behind, so a fixed allowance would brand a
+    # perfectly healthy metals or FX feed as dead and stop all trading — the
+    # same failure the cache bug caused, from a different direction.
+    max_staleness_sec: int = 120
+    respect_provider_delay: bool = True
     orderbook_depth: int = 20
     request_timeout_sec: int = 15
 

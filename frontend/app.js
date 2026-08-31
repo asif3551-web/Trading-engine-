@@ -29,10 +29,18 @@ const state = {
 
 /* Suggestions only — the symbol field accepts anything the feed resolves. */
 const COMMON_SYMBOLS = [
+  // Crypto — Binance, real time
   'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT', 'ADA/USDT',
-  'DOGE/USDT', 'AVAX/USDT', 'LINK/USDT', 'MATIC/USDT', 'DOT/USDT', 'LTC/USDT',
+  'DOGE/USDT', 'AVAX/USDT', 'LINK/USDT', 'DOT/USDT', 'LTC/USDT', 'SUIUSDT',
+  // Metals — Yahoo futures, delayed
+  'XAUUSD', 'XAGUSD', 'XPTUSD', 'XPDUSD', 'XCUUSD',
+  // Forex — Yahoo, delayed, no volume
+  'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD',
+  'EURJPY', 'GBPJPY', 'DXY',
+  // Indices and energy
+  'US500', 'US100', 'US30', 'DE40', 'UK100', 'VIX', 'USOIL', 'UKOIL', 'NATGAS',
+  // Equities
   'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'SPY', 'QQQ',
-  'EURUSD=X', 'GBPUSD=X', 'USDJPY=X', '^GSPC', '^NDX', 'GC=F', 'CL=F',
 ];
 
 /* ---------- formatting ----------

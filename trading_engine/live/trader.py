@@ -176,12 +176,21 @@ class AutoTrader:
         last_bar = df.index[-1].to_pydatetime()
         bar_seconds = timeframe_seconds(cfg.strategy.timeframe)
         age = (now - last_bar).total_seconds()
-        # Allow one bar of lag plus the configured tolerance.
-        if age > bar_seconds + cfg.data.max_staleness_sec:
+        # Allow one bar of lag, the provider's own publication delay, and the
+        # configured tolerance. Without the provider term, Yahoo's ~15 minute
+        # delay makes every FX and metals feed look dead and stops all trading
+        # on those markets — a healthy feed misdiagnosed as a broken one.
+        provider_delay = 0
+        if cfg.data.respect_provider_delay:
+            from ..data.symbols import resolve
+            provider_delay = resolve(symbol).delay_sec
+        allowance = bar_seconds + provider_delay + cfg.data.max_staleness_sec
+        if age > allowance:
             self.status.data_stale = True
             log.warning(
-                "%s data is %.0fs old (last bar %s) — no new risk",
-                symbol, age, last_bar.isoformat(),
+                "%s data is %.0fs old, past the %.0fs allowance "
+                "(last bar %s) — no new risk",
+                symbol, age, allowance, last_bar.isoformat(),
             )
             self._manage_open_position(symbol, df, allow_new=False)
             self._note(symbol, f"data is {age:.0f}s stale — no new risk")

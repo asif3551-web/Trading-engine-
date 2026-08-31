@@ -275,6 +275,40 @@ def cmd_trade(args) -> int:
     return 0
 
 
+def cmd_symbols(args) -> int:
+    """List the markets the engine knows how to fetch."""
+    from .data.symbols import catalogue, describe, resolve
+
+    if args.query:
+        for name in args.query.split(","):
+            name = name.strip()
+            if not name:
+                continue
+            market = resolve(name)
+            print(f"\n  {name}")
+            print(f"    provider   {market.provider}:{market.provider_symbol}")
+            print(f"    market     {market.description}")
+            print(f"    class      {market.asset_class.value}")
+            print(f"    timing     "
+                  f"{'real time' if market.is_realtime else f'~{market.delay_sec // 60} min delayed'}")
+            print(f"    volume     {'yes' if market.has_volume else 'NO — volume-based confluence abstains'}")
+        print()
+        return 0
+
+    for group, entries in catalogue().items():
+        print(f"\n{group}")
+        print("-" * len(group))
+        for name, market in entries:
+            flag = "" if market.has_volume else "  (no volume)"
+            print(f"  {name:<14} {market.provider_symbol:<12} {market.description}{flag}")
+    print(
+        "\nAny of these spellings work: XAUUSD, XAU/USD, GOLD, xau.\n"
+        "Unlisted tickers are passed to Yahoo verbatim, so AAPL, ^VIX and\n"
+        "ES=F all work too.\n"
+    )
+    return 0
+
+
 def cmd_tune(args) -> int:
     """Walk-forward parameter sweep on real data."""
     from .backtest.tuner import format_report, tune
@@ -434,6 +468,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--iterations", type=int, default=None, help="stop after N cycles",
     )
     tr.set_defaults(func=cmd_trade)
+
+    sy = sub.add_parser(
+        "symbols", help="list supported markets, or resolve specific symbols",
+    )
+    sy.add_argument(
+        "query", nargs="?", default="",
+        help="comma-separated symbols to resolve, e.g. XAUUSD,EURUSD",
+    )
+    sy.set_defaults(func=cmd_symbols, config=None, verbose=False)
 
     tu = sub.add_parser(
         "tune", parents=[common],

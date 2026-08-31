@@ -91,13 +91,21 @@ strategy:
 
 data:
   provider: "auto"                # auto | binance | yfinance | synthetic | csv:<dir>
+  # Run `python -m trading_engine symbols` for the full supported list.
+  # Crypto is real time; metals/FX/indices come from Yahoo ~15 min delayed.
   symbols:
     - "BTC/USDT"
     - "ETH/USDT"
-    - "SOL/USDT"
+    - "XAUUSD"          # gold, resolves to the COMEX future GC=F
+    - "XAGUSD"          # silver -> SI=F
+    - "EURUSD"          # -> EURUSD=X (no volume from Yahoo)
   cache_dir: ".cache/market_data"
   cache_enabled: true
-  max_staleness_sec: 120          # beyond this the feed is stale -> no new risk
+  # Tolerance ON TOP OF one bar duration AND the provider's publication delay.
+  # Yahoo is ~15 min behind, so without respect_provider_delay a healthy metals
+  # or FX feed would be branded stale and all trading on it would stop.
+  max_staleness_sec: 120
+  respect_provider_delay: true
   orderbook_depth: 20
 
 fundamentals:

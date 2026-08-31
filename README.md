@@ -8,9 +8,15 @@ automatically on paper or live through one shared code path.
 ```
 python -m trading_engine scan      --symbol BTC/USDT
 python -m trading_engine backtest  --symbol BTC/USDT --bars 3000
+python -m trading_engine symbols                    # what markets are supported
+python -m trading_engine scan      --symbol XAUUSD  # gold; also XAU/USD or GOLD
 python -m trading_engine tune      --symbol BTC/USDT --bars 20000
 python -m trading_engine serve                      # dashboard on :8000
 ```
+
+Crypto, metals, forex, indices, energy and equities. Crypto is real time via
+Binance; the rest come from Yahoo ~15 minutes delayed — see
+[What "live data" actually means](#what-live-data-actually-means-per-market).
 
 Paper trading is the default everywhere. Live trading needs three explicit
 opt-ins (see [Auto-trading](#auto-trading)); nothing here can place a real order
@@ -227,6 +233,123 @@ both are printed with the results.
 
 ---
 
+## Step-by-step: running it across crypto, metals and forex
+
+### 1. Install
+
+```bash
+git clone -b claude/trading-system-live-signals-gwcirh https://github.com/asif3551-web/Trading-engine-.git
+cd Trading-engine-
+pip install -r requirements.txt
+pip install yfinance PyYAML pyarrow          # yfinance is REQUIRED for metals/FX
+python -m trading_engine vendor-chart        # chart works offline afterwards
+```
+
+`yfinance` is not optional if you want gold, silver or forex — those come from
+Yahoo. Crypto works without it.
+
+### 2. Check a symbol resolves before relying on it
+
+```bash
+python -m trading_engine symbols                      # everything supported
+python -m trading_engine symbols XAUUSD,EURUSD,BTC/USDT
+```
+
+```
+  XAUUSD
+    provider   yfinance:GC=F
+    market     Gold (COMEX front future)
+    timing     ~15 min delayed
+    volume     yes
+```
+
+All of these spell gold: `XAUUSD`, `XAU/USD`, `GOLD`, `xau`. Silver is `XAGUSD`
+or `SILVER`; forex is `EURUSD` or `EUR/USD`; crypto is `BTC/USDT` or just `BTC`.
+Anything not listed is passed to Yahoo verbatim, so `AAPL`, `^VIX` and `ES=F`
+work too.
+
+### 3. Look at one signal
+
+```bash
+python -m trading_engine scan --symbol XAUUSD --timeframe 15m
+```
+
+Prints entry, stop, the TP ladder, reward:risk, and the confluence reasons — or
+names the gate that rejected it. `NO SIGNAL` is the normal answer most of the
+time; the engine takes roughly one trade per 200 bars by design.
+
+### 4. Backtest it
+
+```bash
+python -m trading_engine backtest --symbol XAUUSD --bars 3000
+python -m trading_engine backtest --symbol EURUSD --timeframe 1h --bars 3000
+```
+
+Yahoo caps intraday history at ~60 days, so for a longer sample use `1h` or
+`1d`. Crypto has no such limit — `--bars 20000` on 15m works fine.
+
+### 5. Run the dashboard with paper trading
+
+```bash
+python -m trading_engine serve --symbol BTC/USDT,ETH/USDT,XAUUSD,XAGUSD,EURUSD
+```
+
+Open <http://127.0.0.1:8000>. Paper trading is on by default. The symbol box is
+free text, so you can chart anything without restarting; the watchlist above is
+what the autotrader actually trades.
+
+### 6. Validate before trusting it
+
+```bash
+python -m trading_engine tune --symbol XAUUSD --timeframe 1h --bars 8000
+python -m trading_engine walkforward --symbol BTC/USDT --bars 20000
+```
+
+---
+
+## What "live data" actually means per market
+
+Be clear-eyed about this before wiring money to it:
+
+| Market | Source | Timing | Volume | Suitable for |
+|---|---|---|---|---|
+| **Crypto** | Binance public API | **Real time** | Yes | Live signals, paper, live trading |
+| **Metals** (XAU, XAG, XPT, XCU) | Yahoo, COMEX futures | **~15 min delayed** | Yes | Signals, paper, research |
+| **Forex** | Yahoo spot | **~15 min delayed** | **None** | Signals, paper, research |
+| **Indices / Energy** | Yahoo | ~15 min delayed | Mixed | Signals, paper, research |
+| **Equities** | Yahoo | ~15 min delayed | Yes | Signals, paper, research |
+
+Only crypto is genuinely real time. **A 15-minute delay is fine for research and
+paper trading on 15m or higher bars, and is not adequate for live execution** —
+you would be acting on prices that have already moved. If you want to trade
+metals or FX live, you need a broker feed (OANDA, Interactive Brokers, Twelve
+Data, Polygon). The `DataFeed` interface in `trading_engine/data/feeds.py` is
+three methods; adding one is a small job, and the engine treats it identically.
+
+Three consequences the engine handles for you, because each one caused a real
+failure during development:
+
+1. **Delay-aware staleness.** The live trader adds the provider's publication
+   delay to its staleness allowance. Without it Yahoo's 15 minutes tripped the
+   "data is stale — no new risk" guard on every poll, and metals and FX never
+   traded at all.
+2. **Volume-free markets are not handicapped.** Spot FX has no volume, which
+   disables three confluence components. Those components only ever *add*
+   points, so leaving them out silently docked FX ~30 points against a fixed
+   threshold. The score is renormalised over the components actually available.
+3. **Futures over spot for metals.** `XAUUSD` resolves to `GC=F`, not
+   `XAUUSD=X`, because COMEX gold carries real volume and dense intraday bars
+   while Yahoo's spot gold has neither. Ask for `XAUUSD.SPOT` if you want spot.
+
+### Market hours
+
+Crypto trades 24/7. Metals, FX, indices and equities close at weekends and
+observe session breaks, so expect `no data` or a stale feed outside hours — that
+is the market being shut, not a fault. Forex runs Sunday 22:00 to Friday 22:00
+UTC; COMEX metals have a daily maintenance break around 22:00-23:00 UTC.
+
+---
+
 ## Installation
 
 ```bash
@@ -334,8 +457,8 @@ flattens everything.
 
 | Provider | Coverage | Notes |
 |---|---|---|
-| `binance` | Crypto spot + perp funding/OI | Public endpoints, no key needed |
-| `yfinance` | Equities, FX, indices, futures | Optional install; ~60 days of intraday history, and **delisted tickers are absent, so long backtests carry survivorship bias** |
+| `binance` | Crypto spot + perp funding/OI | Public endpoints, no key needed, real time |
+| `yfinance` | Metals, FX, indices, energy, equities | Needed for anything non-crypto; ~15 min delayed, ~60 days of intraday history, and **delisted tickers are absent, so long backtests carry survivorship bias** |
 | `csv:<dir>` | Your own data | `SYMBOL_TIMEFRAME.csv` |
 | `synthetic` | Generated bars | Deterministic; development and tests only |
 
@@ -410,7 +533,7 @@ trading_engine/
   live/                   Broker adapters and the autotrader
   api/server.py           REST API and dashboard host
 frontend/                 Dashboard (Lightweight Charts)
-tests/                    136 tests
+tests/                    173 tests
 .claude/skills/           Reusable skills distilled from top-rated projects
 ```
 
@@ -433,7 +556,7 @@ open-source work in each area, so the practices survive beyond this repo:
 ## Testing
 
 ```bash
-python -m pytest tests/ -q      # 136 tests
+python -m pytest tests/ -q      # 173 tests
 ```
 
 The suite covers indicator correctness and causality, structure and sweep

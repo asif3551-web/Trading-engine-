@@ -138,7 +138,11 @@ class BinanceFeed(DataFeed):
 
     @staticmethod
     def normalise(symbol: str) -> str:
-        """BTC/USDT -> BTCUSDT."""
+        """Friendly name -> Binance pair, e.g. BTC/USDT or BTC -> BTCUSDT."""
+        from .symbols import resolve
+        market = resolve(symbol)
+        if market.provider == "binance":
+            return market.provider_symbol
         return symbol.replace("/", "").replace("-", "").upper()
 
     def get_bars(
@@ -285,6 +289,9 @@ class YFinanceFeed(DataFeed):
     ) -> pd.DataFrame:
         import yfinance as yf
 
+        from .symbols import resolve
+        # "XAUUSD" must become "GC=F" before Yahoo will answer.
+        ticker = resolve(symbol).provider_symbol
         interval = _YF_INTERVALS.get(timeframe)
         if interval is None:
             raise DataError(
@@ -301,14 +308,18 @@ class YFinanceFeed(DataFeed):
         end = end or datetime.now(timezone.utc)
         try:
             raw = yf.download(
-                symbol, start=end - span, end=end, interval=interval,
+                ticker, start=end - span, end=end, interval=interval,
                 progress=False, auto_adjust=True, threads=False,
             )
         except Exception as exc:  # yfinance raises a wide variety
             raise DataError(f"yfinance download failed for {symbol}: {exc}") from exc
 
         if raw is None or raw.empty:
-            raise DataError(f"yfinance returned no data for {symbol}")
+            raise DataError(
+                f"yfinance returned no data for {symbol} (ticker {ticker}). "
+                f"Intraday history is limited to ~60 days, and futures/FX are "
+                f"closed at weekends."
+            )
 
         if isinstance(raw.columns, pd.MultiIndex):
             raw.columns = raw.columns.get_level_values(0)
@@ -320,16 +331,8 @@ class YFinanceFeed(DataFeed):
         return validate_ohlcv(df.tail(limit), symbol)
 
     def asset_class(self, symbol: str) -> AssetClass:
-        s = symbol.upper()
-        if s.endswith("=X"):
-            return AssetClass.FX
-        if s.endswith("=F"):
-            return AssetClass.FUTURES
-        if s.startswith("^"):
-            return AssetClass.INDEX
-        if s.endswith("-USD"):
-            return AssetClass.CRYPTO
-        return AssetClass.EQUITY
+        from .symbols import resolve
+        return resolve(symbol).asset_class
 
 
 # --------------------------------------------------------------------------- #
@@ -572,11 +575,15 @@ class CachedFeed(DataFeed):
 
 
 def infer_provider(symbol: str) -> str:
-    """Guess the right provider from the symbol's shape."""
-    s = symbol.upper()
-    if "/" in s or s.endswith(("USDT", "USDC", "BUSD")):
-        return "binance"
-    return "yfinance"
+    """Which provider serves this symbol.
+
+    Delegates to the symbol registry. The previous shape-matching heuristic sent
+    anything containing a slash to Binance, so `XAU/USD` and `EUR/USD` — the
+    most natural spellings — were routed to a crypto exchange that lists
+    neither.
+    """
+    from .symbols import resolve
+    return resolve(symbol).provider
 
 
 def get_feed(

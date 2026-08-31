@@ -345,17 +345,34 @@ class LiquiditySweepStrategy:
                 score -= 12.0
                 reasons.append(f"RSI {rsi:.0f} — stretched, poor entry location")
 
+        # Volume components. Spot FX and spot metals report no volume at all,
+        # so these must ABSTAIN rather than simply fail to score: a component
+        # that can only add points silently penalises every market that cannot
+        # supply it, and the fixed confidence threshold then rejects FX and
+        # metals setups that would have passed on crypto. `available` tracks
+        # the headroom actually on offer so the score can be renormalised.
+        available = 100.0
         vz = val("volume_z")
-        if vz is not None and vz > 1.0:
-            score += 10.0
-            reasons.append(f"volume {vz:.1f}σ above average — real participation")
+        cmf_value = val("cmf")
+        volume_present = vz is not None or cmf_value is not None
 
-        cmf = val("cmf")
-        if cmf is not None:
-            if (long and cmf > 0.05) or (not long and cmf < -0.05):
-                score += 8.0
-                reasons.append(f"money flow confirms ({cmf:+.2f})")
+        if volume_present:
+            if vz is not None and vz > 1.0:
+                score += 10.0
+                reasons.append(
+                    f"volume {vz:.1f}σ above average — real participation"
+                )
+            if cmf_value is not None:
+                if (long and cmf_value > 0.05) or (not long and cmf_value < -0.05):
+                    score += 8.0
+                    reasons.append(f"money flow confirms ({cmf_value:+.2f})")
+        else:
+            # 18 points of upside are unreachable on this market.
+            available -= 18.0
 
+        score = max(0.0, min(available, score))
+        if available < 100.0:
+            score = score * 100.0 / available
         return max(0.0, min(100.0, score)), reasons
 
     def _build_signal(
