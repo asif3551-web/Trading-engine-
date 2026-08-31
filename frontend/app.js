@@ -129,15 +129,21 @@ function applyChartTheme() {
 }
 
 /* ---------- chart library loading ----------
- * Tried in order: local vendored copy (works fully offline), then public CDNs.
- * Corporate proxies, ad blockers and offline machines all block CDNs, and the
- * dashboard must stay usable when that happens — so a total failure only costs
- * the chart, never the signals, prices or risk panels.
+ * Tried in order: local vendored copy (works fully offline), then the CDNs that
+ * actually serve this package. A source can fail for boring reasons — a wrong
+ * URL, an offline machine, a restrictive network — so the loader falls through
+ * and, if everything fails, costs only the chart. The signals, prices,
+ * positions and risk panels are what someone needs in order to act, and they
+ * must never depend on a third-party script arriving.
  */
 
 const CHART_SOURCES = [
+  // Local copy first (see `vendor-chart`), then the CDNs that actually serve
+  // this file. cdnjs is deliberately absent: it does not host
+  // lightweight-charts at any version, and having it first meant the very
+  // first attempt always 404'd — which looked like a blocked network rather
+  // than a wrong URL.
   '/vendor/lightweight-charts.standalone.production.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/lightweight-charts/4.2.0/lightweight-charts.standalone.production.js',
   'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js',
   'https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js',
 ];

@@ -4,10 +4,18 @@ Apache-2.0, ~50KB gzipped. v5 is the current major line and changed the series
 API from `chart.addCandlestickSeries()` to `chart.addSeries(CandlestickSeries, …)`.
 Pin an exact version; the two APIs are not compatible.
 
-CDN (allowlisted host):
+CDN — use **jsdelivr or unpkg**, which mirror the npm package:
+
 ```html
-<script src="https://cdnjs.cloudflare.com/ajax/libs/lightweight-charts/5.0.9/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.0.9/dist/lightweight-charts.standalone.production.js"></script>
 ```
+
+**cdnjs does not host lightweight-charts.** Requesting
+`cdnjs.cloudflare.com/ajax/libs/lightweight-charts/...` returns 404 at every
+version. This is worth knowing because the failure is easy to misread: a 404 on
+the first source in a fallback chain looks exactly like a blocked corporate
+proxy or an ad blocker, and sends you debugging the network instead of the URL.
+Verify a CDN actually serves a library before putting it first in a chain.
 
 ## Create a chart
 

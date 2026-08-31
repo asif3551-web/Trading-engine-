@@ -353,9 +353,9 @@ def cmd_tune(args) -> int:
 def cmd_vendor_chart(args) -> int:
     """Download the charting library into frontend/vendor/ for offline use.
 
-    The dashboard tries this local copy first, then public CDNs. Run this once
-    on a machine whose network blocks CDNs (corporate proxies and ad blockers
-    both do) or that has no internet at all.
+    The dashboard tries this local copy first, then jsdelivr and unpkg. Running
+    this is optional — the CDN path works — but it makes the chart independent
+    of the network, which is worth having on a restricted or offline machine.
     """
     import urllib.error
     import urllib.request
@@ -363,8 +363,10 @@ def cmd_vendor_chart(args) -> int:
 
     version = args.chart_version
     filename = "lightweight-charts.standalone.production.js"
+    # jsdelivr and unpkg both mirror the npm package. cdnjs does not host
+    # lightweight-charts, so it is not tried at all — listing it only produced
+    # a confusing 404 on the first attempt.
     sources = [
-        f"https://cdnjs.cloudflare.com/ajax/libs/lightweight-charts/{version}/{filename}",
         f"https://cdn.jsdelivr.net/npm/lightweight-charts@{version}/dist/{filename}",
         f"https://unpkg.com/lightweight-charts@{version}/dist/{filename}",
     ]

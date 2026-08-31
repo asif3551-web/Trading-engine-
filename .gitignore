@@ -20,6 +20,10 @@ htmlcov/
 .idea/
 .vscode/
 
+# Vendored chart library — regenerated on demand by `vendor-chart`, and the
+# CDN path works without it, so there is no reason to commit a minified blob.
+frontend/vendor/
+
 # Never commit credentials. Broker keys are read from the environment only.
 .env
 *.key
