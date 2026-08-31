@@ -93,6 +93,8 @@ data:
   provider: "auto"                # auto | binance | yfinance | synthetic | csv:<dir>
   symbols:
     - "BTC/USDT"
+    - "ETH/USDT"
+    - "SOL/USDT"
   cache_dir: ".cache/market_data"
   cache_enabled: true
   max_staleness_sec: 120          # beyond this the feed is stale -> no new risk

@@ -111,6 +111,48 @@ function applyChartTheme() {
   if (state.equitySeries) state.equitySeries.applyOptions({ color: c.accent });
 }
 
+/* ---------- chart library loading ----------
+ * Tried in order: local vendored copy (works fully offline), then public CDNs.
+ * Corporate proxies, ad blockers and offline machines all block CDNs, and the
+ * dashboard must stay usable when that happens — so a total failure only costs
+ * the chart, never the signals, prices or risk panels.
+ */
+
+const CHART_SOURCES = [
+  '/vendor/lightweight-charts.standalone.production.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/lightweight-charts/4.2.0/lightweight-charts.standalone.production.js',
+  'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js',
+  'https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js',
+];
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const el = document.createElement('script');
+    el.src = src;
+    el.async = false;
+    el.onload = () => resolve(src);
+    el.onerror = () => { el.remove(); reject(new Error(`failed: ${src}`)); };
+    document.head.appendChild(el);
+  });
+}
+
+async function loadChartLibrary() {
+  if (typeof LightweightCharts !== 'undefined') return true;
+  for (const src of CHART_SOURCES) {
+    try {
+      await loadScript(src);
+      if (typeof LightweightCharts !== 'undefined') {
+        console.info(`chart library loaded from ${src}`);
+        return true;
+      }
+    } catch {
+      /* try the next source */
+    }
+  }
+  console.warn('chart library unavailable from all sources; charts disabled');
+  return false;
+}
+
 /* ---------- charts ---------- */
 
 function buildCharts() {
@@ -119,9 +161,12 @@ function buildCharts() {
   // panels someone actually needs to act. Losing the chart is a degradation,
   // not a failure.
   if (typeof LightweightCharts === 'undefined') {
-    const message = '<div class="empty">Chart library unavailable — could not '
-      + 'reach the CDN.<br>All prices, signals and positions below are live '
-      + 'and unaffected.</div>';
+    const message = '<div class="empty">Chart unavailable — the charting '
+      + 'library could not be loaded from any source.<br>'
+      + 'For a fully offline copy run: <code>python -m trading_engine '
+      + 'vendor-chart</code><br>'
+      + 'All prices, signals, positions and risk below are live and '
+      + 'unaffected.</div>';
     document.getElementById('chart').innerHTML = message;
     document.getElementById('equity-chart').innerHTML = message;
     return;
@@ -592,6 +637,7 @@ async function refresh() {
 /* ---------- init ---------- */
 
 async function init() {
+  await loadChartLibrary();
   buildCharts();
 
   let config = null;

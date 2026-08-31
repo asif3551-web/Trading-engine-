@@ -128,7 +128,9 @@
     </aside>
   </main>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/lightweight-charts/4.2.0/lightweight-charts.standalone.production.js"></script>
+  <!-- The charting library is fetched by app.js, which tries several CDNs and
+       then a locally vendored copy, so a blocked CDN degrades the chart rather
+       than the whole dashboard. -->
   <script src="/app.js"></script>
 </body>
 </html>

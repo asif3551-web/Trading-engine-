@@ -72,6 +72,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = path.read_bytes()
         except OSError:
+            # The vendored chart library is optional; the page falls back to a
+            # CDN and then to a chartless layout, so a 404 here is routine.
             self._send({"error": f"{path.name} not found"}, 404)
             return
         self.send_response(200)
@@ -99,6 +101,13 @@ class Handler(BaseHTTPRequestHandler):
                 )
             elif route == "/styles.css":
                 self._send_file(FRONTEND_DIR / "styles.css", "text/css; charset=utf-8")
+            elif route == "/vendor/lightweight-charts.standalone.production.js":
+                # Exact-path match only — never join user input onto a path.
+                self._send_file(
+                    FRONTEND_DIR / "vendor"
+                    / "lightweight-charts.standalone.production.js",
+                    "application/javascript; charset=utf-8",
+                )
             elif route == "/favicon.ico":
                 self.send_response(204)      # no icon, and no 404 noise either
                 self.send_header("Content-Length", "0")

@@ -231,6 +231,18 @@ taken, you cannot tell a broken system from an unlucky one.
 ```bash
 python -m trading_engine backtest --symbol BTC/USDT --bars 5000
 python -m trading_engine serve --trade          # http://127.0.0.1:8000
+
+# Watch several markets — they populate the dashboard's symbol picker
+python -m trading_engine serve --symbol BTC/USDT,ETH/USDT,SOL/USDT --trade
+```
+
+The chart uses TradingView Lightweight Charts, loaded from a CDN. Corporate
+proxies, ad blockers and offline machines all block CDNs, so the dashboard tries
+a local copy first, then three CDNs, and if all fail it drops **only** the chart
+— prices, signals, positions and risk stay live. For a permanently offline copy:
+
+```bash
+python -m trading_engine vendor-chart          # ~50KB into frontend/vendor/
 ```
 
 The dashboard shows the chart with entry/stop/target lines and liquidity zone
@@ -282,6 +294,13 @@ warning, the API returns `is_synthetic`, and the dashboard shows a banner.
 Data quality is enforced on ingest: duplicate or unsorted timestamps and
 impossible bars (high below low, close outside the range) are rejected rather
 than passed downstream, because bad data produces confident, wrong signals.
+
+Fetched bars are cached on disk, and the cache judges freshness from the **data**
+rather than the file's age: an entry is reused only while its newest bar is still
+the currently forming one. Expiring on file age instead is what made an earlier
+version serve ~1800s-stale bars to the live trader, which then correctly declared
+the feed dead and refused to trade — `no new risk` forever. Historical bars never
+change, so repeated backtests over the same window still avoid the network.
 
 ---
 
@@ -337,7 +356,7 @@ trading_engine/
   live/                   Broker adapters and the autotrader
   api/server.py           REST API and dashboard host
 frontend/                 Dashboard (Lightweight Charts)
-tests/                    123 tests
+tests/                    127 tests
 .claude/skills/           Reusable skills distilled from top-rated projects
 ```
 
@@ -360,7 +379,7 @@ open-source work in each area, so the practices survive beyond this repo:
 ## Testing
 
 ```bash
-python -m pytest tests/ -q      # 123 tests
+python -m pytest tests/ -q      # 127 tests
 ```
 
 The suite covers indicator correctness and causality, structure and sweep

@@ -35,7 +35,10 @@ def _setup_logging(verbose: bool) -> None:
 def _load_config(args) -> Config:
     config = Config.load(args.config)
     if getattr(args, "symbol", None):
-        config.data.symbols = [args.symbol]
+        # Accept "BTC/USDT,ETH/USDT" so several markets can be watched at once.
+        config.data.symbols = [
+            s.strip() for s in args.symbol.split(",") if s.strip()
+        ]
     if getattr(args, "timeframe", None):
         config.strategy.timeframe = args.timeframe
     if getattr(args, "provider", None):
@@ -272,6 +275,63 @@ def cmd_trade(args) -> int:
     return 0
 
 
+def cmd_vendor_chart(args) -> int:
+    """Download the charting library into frontend/vendor/ for offline use.
+
+    The dashboard tries this local copy first, then public CDNs. Run this once
+    on a machine whose network blocks CDNs (corporate proxies and ad blockers
+    both do) or that has no internet at all.
+    """
+    import urllib.error
+    import urllib.request
+    from pathlib import Path
+
+    version = args.chart_version
+    filename = "lightweight-charts.standalone.production.js"
+    sources = [
+        f"https://cdnjs.cloudflare.com/ajax/libs/lightweight-charts/{version}/{filename}",
+        f"https://cdn.jsdelivr.net/npm/lightweight-charts@{version}/dist/{filename}",
+        f"https://unpkg.com/lightweight-charts@{version}/dist/{filename}",
+    ]
+
+    target_dir = Path(__file__).resolve().parent.parent / "frontend" / "vendor"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / filename
+
+    for url in sources:
+        print(f"trying {url}")
+        try:
+            request = urllib.request.Request(
+                url, headers={"User-Agent": "trading-engine/1.0"}
+            )
+            with urllib.request.urlopen(request, timeout=30) as response:
+                body = response.read()
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            print(f"  failed: {exc}")
+            continue
+
+        # Sanity-check the payload rather than trusting a 200: a captive portal
+        # or proxy error page would otherwise be written out as "the library".
+        if len(body) < 50_000 or b"createChart" not in body:
+            print(f"  rejected: {len(body)} bytes and no createChart symbol "
+                  f"— probably a proxy error page, not the library")
+            continue
+
+        target.write_bytes(body)
+        print(f"\nsaved {len(body):,} bytes to {target}")
+        print("the dashboard will now load its chart with no network at all")
+        return 0
+
+    print(
+        "\ncould not download the chart library from any source.\n"
+        "Download it manually on a machine with access and place it at:\n"
+        f"  {target}\n"
+        f"Source: https://unpkg.com/lightweight-charts@{version}/dist/{filename}",
+        file=sys.stderr,
+    )
+    return 1
+
+
 def cmd_serve(args) -> int:
     from .api.server import serve
 
@@ -292,7 +352,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-v", "--verbose", action="store_true")
 
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("-s", "--symbol", help="e.g. BTC/USDT, AAPL, EURUSD=X")
+    common.add_argument(
+        "-s", "--symbol",
+        help="one symbol or a comma-separated list, e.g. BTC/USDT,ETH/USDT "
+             "(also AAPL, EURUSD=X, ^GSPC, GC=F)",
+    )
     common.add_argument("-t", "--timeframe", help="1m 5m 15m 1h 4h 1d")
     common.add_argument(
         "-p", "--provider",
@@ -329,6 +393,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--iterations", type=int, default=None, help="stop after N cycles",
     )
     tr.set_defaults(func=cmd_trade)
+
+    vc = sub.add_parser(
+        "vendor-chart",
+        help="download the charting library for offline dashboard use",
+    )
+    vc.add_argument("--chart-version", default="4.2.0")
+    vc.set_defaults(func=cmd_vendor_chart, config=None, verbose=False)
 
     sv = sub.add_parser("serve", parents=[common], help="run the dashboard")
     sv.add_argument("--host", default="127.0.0.1")

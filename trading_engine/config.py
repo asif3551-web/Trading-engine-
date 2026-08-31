@@ -175,7 +175,11 @@ class StrategyConfig:
 @dataclass
 class DataConfig:
     provider: str = "auto"               # auto | binance | yfinance | csv | synthetic
-    symbols: list[str] = field(default_factory=lambda: ["BTC/USDT"])
+    # A few liquid defaults so the dashboard's symbol picker is useful out of
+    # the box. Override in config, or with a comma-separated --symbol.
+    symbols: list[str] = field(
+        default_factory=lambda: ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+    )
     cache_dir: str = ".cache/market_data"
     cache_enabled: bool = True
     max_staleness_sec: int = 120         # beyond this the feed is stale -> fail closed

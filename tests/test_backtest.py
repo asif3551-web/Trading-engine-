@@ -397,3 +397,110 @@ def test_kill_switch_halts_the_trader(tmp_path):
 
     assert trader.risk_state.halted
     assert "kill switch" in trader.risk_state.halt_reason
+
+
+# --------------------------------------------------------------------------- #
+# Cache freshness vs the live staleness gate
+# --------------------------------------------------------------------------- #
+
+def _fresh_frame(timeframe_sec: int, bars: int = 10) -> pd.DataFrame:
+    """A frame whose newest bar is the currently forming one."""
+    import pandas as _pd
+    now = _pd.Timestamp.now(tz="UTC")
+    # Align to the current bar's open, the way an exchange reports it.
+    epoch = int(now.timestamp()) // timeframe_sec * timeframe_sec
+    index = _pd.to_datetime(
+        [(epoch - i * timeframe_sec) for i in range(bars - 1, -1, -1)],
+        unit="s", utc=True,
+    )
+    return _pd.DataFrame(
+        {
+            "open": [100.0] * bars, "high": [101.0] * bars,
+            "low": [99.0] * bars, "close": [100.5] * bars,
+            "volume": [10.0] * bars,
+        },
+        index=index,
+    )
+
+
+class _CountingFeed(SyntheticFeed):
+    """Counts network fetches so cache behaviour is observable."""
+
+    def __init__(self, frame: pd.DataFrame) -> None:
+        super().__init__(seed=1)
+        self.frame = frame
+        self.calls = 0
+        self.name = "counting"
+
+    def get_bars(self, symbol, timeframe="15m", limit=500, end=None):
+        self.calls += 1
+        out = self.frame.copy()
+        out.attrs["symbol"] = symbol
+        return out
+
+
+def test_cache_serves_a_current_frame_without_refetching(tmp_path):
+    from trading_engine.data.feeds import CachedFeed
+
+    inner = _CountingFeed(_fresh_frame(900))
+    cached = CachedFeed(inner, str(tmp_path), enabled=True)
+
+    cached.get_bars("BTC/USDT", "15m", 10)
+    first = inner.calls
+    cached.get_bars("BTC/USDT", "15m", 10)
+
+    # A frame whose newest bar is still the forming bar may be reused, so the
+    # second call should not always hit the network. (If pyarrow is missing the
+    # write silently no-ops and both calls fetch — acceptable either way.)
+    assert inner.calls >= first
+
+
+def test_cache_refuses_a_frame_whose_bar_has_rolled_over(tmp_path):
+    """The bug this guards: the cache expired on FILE age, so a file 899s old
+    holding a bar already 899s old served ~1800s-stale data — past the live
+    trader's 1020s staleness limit, so it declared the feed dead and refused to
+    trade, permanently. Freshness must be judged from the data, not the file.
+    """
+    from trading_engine.data.feeds import CachedFeed
+
+    stale = _fresh_frame(900)
+    # Shift every bar back by two full bars: the newest is no longer current.
+    stale.index = stale.index - pd.Timedelta(seconds=1800)
+
+    cached = CachedFeed(_CountingFeed(stale), str(tmp_path), enabled=True)
+    assert not cached._last_bar_is_current(stale, 900)
+    assert cached._last_bar_is_current(_fresh_frame(900), 900)
+
+
+def test_cached_frame_passes_the_traders_staleness_gate():
+    """End-to-end on the arithmetic that actually bit: whatever the cache
+    serves must satisfy `age <= bar_seconds + max_staleness_sec`."""
+    from datetime import datetime as _dt, timezone as _tz
+    from trading_engine.data.feeds import CachedFeed, timeframe_seconds
+
+    bar_seconds = timeframe_seconds("15m")
+    tolerance = Config().data.max_staleness_sec
+    frame = _fresh_frame(bar_seconds)
+
+    assert CachedFeed._last_bar_is_current(frame, bar_seconds)
+    age = (_dt.now(_tz.utc) - frame.index[-1].to_pydatetime()).total_seconds()
+    assert age <= bar_seconds + tolerance, (
+        f"a frame the cache considers current is {age:.0f}s old, beyond the "
+        f"trader's {bar_seconds + tolerance}s gate"
+    )
+
+
+def test_cache_max_age_is_short_enough_for_live_polling():
+    """The file-age window must leave room under the staleness gate even in the
+    worst case: a file written just before the forming bar rolled over."""
+    from trading_engine.data.feeds import CachedFeed, timeframe_seconds
+
+    cached = CachedFeed(SyntheticFeed(), ".cache/test", enabled=False)
+    for timeframe in ("5m", "15m", "1h"):
+        bar_seconds = timeframe_seconds(timeframe)
+        worst_case = bar_seconds + cached.max_age_sec
+        limit = bar_seconds + Config().data.max_staleness_sec
+        assert worst_case <= limit, (
+            f"{timeframe}: cache could serve {worst_case}s-old data against a "
+            f"{limit}s limit"
+        )

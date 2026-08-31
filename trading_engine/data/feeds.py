@@ -486,18 +486,32 @@ class CSVFeed(DataFeed):
 
 
 class CachedFeed(DataFeed):
-    """Wraps a feed with an on-disk parquet/CSV cache.
+    """Wraps a feed with an on-disk parquet cache.
 
-    Cache entries expire after roughly one bar duration so live polling still
-    sees fresh data, while repeated backtests over the same window hit disk
-    instead of the network.
+    The cache validates the **data**, not the file's age. An earlier version
+    expired entries after one bar duration, which was wrong for live polling:
+    a file 899s old whose newest bar was already 899s old when written served
+    data ~1800s stale, well past the live trader's staleness limit, so the
+    trader declared the feed dead and refused to trade — permanently.
+
+    So an entry is reused only when both hold:
+      1. its newest bar is still the *currently forming* bar, and
+      2. the file is younger than `max_age_sec`, so that forming bar's
+         high/low/close are not badly out of date.
+
+    Historical bars never change, so this still spares the network on repeated
+    backtests over the same window while keeping live polling honest.
     """
 
-    def __init__(self, feed: DataFeed, cache_dir: str, enabled: bool = True) -> None:
+    def __init__(
+        self, feed: DataFeed, cache_dir: str, enabled: bool = True,
+        max_age_sec: int = 45,
+    ) -> None:
         self.feed = feed
         self.name = f"cached:{feed.name}"
         self.cache_dir = Path(cache_dir)
         self.enabled = enabled
+        self.max_age_sec = max_age_sec
         if enabled:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -513,13 +527,18 @@ class CachedFeed(DataFeed):
             return self.feed.get_bars(symbol, timeframe, limit, end)
 
         path = self._path(symbol, timeframe, limit)
-        max_age = timeframe_seconds(timeframe)
-        if path.exists() and (time.time() - path.stat().st_mtime) < max_age:
+        bar_seconds = timeframe_seconds(timeframe)
+        file_age = (
+            time.time() - path.stat().st_mtime if path.exists() else float("inf")
+        )
+
+        if file_age < self.max_age_sec:
             try:
                 df = pd.read_parquet(path)
-                df.attrs["symbol"] = symbol
-                df.attrs["timeframe"] = timeframe
-                return df
+                if self._last_bar_is_current(df, bar_seconds):
+                    df.attrs["symbol"] = symbol
+                    df.attrs["timeframe"] = timeframe
+                    return df
             except Exception:
                 pass  # a corrupt cache entry should never be fatal
 
@@ -529,6 +548,18 @@ class CachedFeed(DataFeed):
         except Exception:
             pass      # pyarrow missing or disk full — caching is best-effort
         return df
+
+    @staticmethod
+    def _last_bar_is_current(df: pd.DataFrame, bar_seconds: int) -> bool:
+        """True if the frame's newest bar is the period we are still inside."""
+        if df.empty:
+            return False
+        last = df.index[-1]
+        if last.tzinfo is None:
+            last = last.tz_localize("UTC")
+        age = (datetime.now(timezone.utc) - last.to_pydatetime()).total_seconds()
+        # Allow a little clock skew, but reject once the next bar has opened.
+        return -60.0 <= age < bar_seconds
 
     def get_orderbook(self, symbol: str, depth: int = 20) -> OrderBook | None:
         return self.feed.get_orderbook(symbol, depth)   # never cache live depth
